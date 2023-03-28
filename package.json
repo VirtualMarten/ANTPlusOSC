@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "ant-plus": "^0.1.24",
+    "osc": "^2.4.3"
+  }
+}
