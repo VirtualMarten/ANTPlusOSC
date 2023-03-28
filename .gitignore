@@ -1,3 +1,9 @@
+# start.cmd
+start.cmd
+
+# VSCode
+.vscode/**/*
+
 # Logs
 logs
 *.log

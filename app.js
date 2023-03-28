@@ -1,11 +1,10 @@
-'use strict';
 
 const ant = require('ant-plus');
 const osc = require('osc');
 const config = require(process.cwd() + '/config.json');
 
-const TIMEOUT = 10000 // Time in milliseconds that it takes to consider the device disconnected.
-const RECONNECT_DELAY = 15000 // Time in milliseconds to wait before attempting to reconnect.
+const TIMEOUT = config.timeout; // Time in milliseconds that it takes to consider the device disconnected.
+const RECONNECT_DELAY = config.reconnect_delay; // Time in milliseconds to wait before attempting to reconnect.
 
 const osc_port = new osc.UDPPort({ remotePort: config.output_port });
 osc_port.on('ready', () => {
@@ -15,17 +14,71 @@ osc_port.open();
 
 let last_bpm = 0;
 
+function normalize(n, min, max) {
+    return (n - min) / (max - min);
+}
+
 function sendBPM(bpm) {
     if (bpm != last_bpm) {
-        osc_port.send({
-            timeTag: osc.timeTag(),
-            packets: [
-                {
-                    address: '/avatar/parameters/HRF',
-                    args: [ { type: 'f', value: bpm / 200.0 } ]
+        let packets = [];
+        for (let output of config.outputs) {
+            if (output.error == true) continue;
+
+            let value = 0;
+            let [source, type] = output.type.split(':', 2);
+
+            if (source == 'bpm') {
+                value = bpm;
+            }
+            else {
+                console.error(`Error on output ${output.path}:\nType must be bpm, as that is all that is supported at this time.`);
+                output['error'] = true;
+                continue;
+            }
+
+            if (type == 'f' || type == 'float') {
+                if (output.normalization_range) {
+                    const [min, max] = output.normalization_range.split('-', 2);
+                    value = normalize(value, min, max);
                 }
-            ]
-        });
+            }
+            else if (type == 'i' || type == 'int') {
+                value = Math.floor(value);
+            }
+            else if (type == 'digits') {
+                if (output.split_digits_max)
+                    value = Math.min(value, output.split_digits_max);
+                value = value.toString().split('').map(Number);
+
+                const separator = (output.digit_subpaths) ? '/' : '_';
+                for (let i = 0; i < value.length; i++) {
+                    packets.push({
+                        address: output.path + separator + (i + 1),
+                        args: [ { type: 'i', value: value[i] } ]
+                    })
+                }
+
+                continue;
+            }
+            else {
+                console.error(`Error on output ${output.path}:\nData type must be either float, int or .`);
+                output['error'] = true;
+                continue;
+            }
+
+            packets.push({
+                address: output.path,
+                args: [ { type: type, value: value } ]
+            });
+        }
+
+        if (packets.length > 0) {
+            osc_port.send({
+                timeTag: osc.timeTag(),
+                packets: packets
+            });
+        }
+
         last_bpm = bpm;
     }
 }
@@ -36,10 +89,7 @@ let stick = null;
 
 if (config.ant_version === 3) stick = new ant.GarminStick3();
 else if (config.ant_version === 2) stick = new ant.GarminStick2();
-else {
-    console.error('Invalid stick version in config! Must be either 2 or 3.');
-    return;
-}
+else return console.error('Invalid stick version in config! Must be either 2 or 3.');
 
 let hr_sensor = new ant.HeartRateSensor(stick);
 let hr_pulses = 0;
@@ -72,19 +122,28 @@ function hr_timeout_cb() {
         if (hr_reconnect_timeout != null)
             clearTimeout(hr_reconnect_timeout);
     }
+
     hr_pulses = 0;
     setTimeout(hr_timeout_cb, TIMEOUT);
 }
 
 hr_sensor.on('hbdata', (data) => {
-    sendBPM(data.ComputedHeartRate);
-    hr_pulses += 1;
     if (hr_connected === null) {
         hr_connected = true;
         console.log('HR connected!');
     }
-    if (hr_timeout === null) {
-        hr_timeout = setTimeout(hr_timeout_cb, TIMEOUT);
+
+    sendBPM(data.ComputedHeartRate);
+    hr_pulses += 1;
+
+    if (TIMEOUT > 0) {
+        if (hr_timeout === null) {
+            hr_timeout = setTimeout(hr_timeout_cb, TIMEOUT);
+        }
+        else {
+            clearTimeout(hr_timeout);
+            hr_timeout = setTimeout(hr_timeout_cb, TIMEOUT);
+        }
     }
 });
 
