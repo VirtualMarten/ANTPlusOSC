@@ -16,7 +16,7 @@
         {
             "type": "bpm:digits",
             "path": "/avatar/parameters/bpm_digits",
-            "split_digits_max": 999,
+            "digits_max": 999,
             "digit_subpaths": false
         }
     ]

@@ -46,8 +46,8 @@ function sendBPM(bpm) {
                 value = Math.floor(value);
             }
             else if (type == 'digits') {
-                if (output.split_digits_max)
-                    value = Math.min(value, output.split_digits_max);
+                if (output.digits_max)
+                    value = Math.min(Math.floor(value), output.digits_max);
                 value = value.toString().split('').map(Number);
 
                 const separator = (output.digit_subpaths) ? '/' : '_';
