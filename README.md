@@ -27,10 +27,10 @@ The amount of time (in milliseconds) that the application will wait before attem
 
 A list of output objects that define the data to be sent to connected devices.
 
-- Output `type` is the source (only bpm for now) followed by a colon and then the data type.
+- `type` is the source (only bpm for now) followed by a colon and then the data type.
  Supported types are `float` or `f`, `int` or `i`, and `digits`.
  Example: `bpm:int` means source BPM, output data type int.
-- Output `path` is the OSC path the value will be sent on.
+- `path` is the OSC path the value will be sent on.
 - `normalization_range` is only used if the output data type is `float`. Format: `min-max`
  When specified it will normalize the value between the given min and max.
  Example: `0-300` will with a bpm of 88 will output 0.293
