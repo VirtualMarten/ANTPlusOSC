@@ -1,5 +1,6 @@
-# start.cmd
+
 start.cmd
+config.json
 
 # VSCode
 .vscode/**/*
