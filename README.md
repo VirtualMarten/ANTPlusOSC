@@ -1,7 +1,7 @@
 # ANTPlusOSC
  OSC output from ANT+ devices. Used for getting Heart Rate into VRChat.
 
-Currently only Heart Rate (BPM) is supported. It's also a bit flakey with staying connected for some reason.
+Currently only Heart Rate (BPM) is supported.
 
 ## Configuration
 
