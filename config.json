@@ -1,0 +1,23 @@
+{
+    "output_port": 9000,
+    "ant_version": 3,
+    "timeout": 10000,
+    "reconnect_delay": 15000,
+    "outputs": [
+        {
+            "type": "bpm:i",
+            "path": "/avatar/parameters/bpm_int"
+        },
+        {
+            "type": "bpm:f",
+            "path": "/avatar/parameters/bpm_float",
+            "normalization_range": "0-200"
+        },
+        {
+            "type": "bpm:digits",
+            "path": "/avatar/parameters/bpm_digits",
+            "digits_max": 999,
+            "digit_subpaths": false
+        }
+    ]
+}
