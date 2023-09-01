@@ -1,6 +1,7 @@
 
 start.cmd
 config.json
+sessiondata.csv
 
 # VSCode
 .vscode/**/*

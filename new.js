@@ -2,9 +2,10 @@
 const ant = require('ant-plus');
 const osc = require('osc');
 const config = require(process.cwd() + '/config.json');
+const fs = require('fs');
 
-const TIMEOUT = config.timeout; // Time in milliseconds that it takes to consider the device disconnected.
-const RECONNECT_DELAY = config.reconnect_delay; // Time in milliseconds to wait before attempting to reconnect.
+const OUTPUT_FILE_PATH = 'sessiondata.csv';
+const RECONNECT_DELAY = config.reconnect_delay;
 
 const osc_port = new osc.UDPPort({ remotePort: config.output_port });
 osc_port.on('ready', () => {
@@ -12,7 +13,11 @@ osc_port.on('ready', () => {
 });
 osc_port.open();
 
+let session_start_time = new Date();
 let last_bpm = 0;
+let avg_bpm = [];
+let max_bpm = 0;
+let min_bpm = 0;
 
 function normalize(n, min, max) {
     return (n - min) / (max - min);
@@ -20,6 +25,11 @@ function normalize(n, min, max) {
 
 function sendBPM(bpm) {
     if (bpm != last_bpm) {
+        if (bpm > max_bpm)
+            max_bpm = bpm;
+        if (bpm && (!min_bpm || bpm < min_bpm))
+            min_bpm = bpm;
+
         let packets = [];
         for (let output of config.outputs) {
             if (output.error == true) continue;
@@ -87,74 +97,105 @@ function sendBPM(bpm) {
 // ANT+ setup
 
 let stick = null;
+let connected = null;
+let reconnect_timeout = null;
+// let reconnect_failed_timeout = null;
 
 if (config.ant_version === 3) stick = new ant.GarminStick3();
 else if (config.ant_version === 2) stick = new ant.GarminStick2();
-else return console.error('Invalid stick version in config! Must be either 2 or 3.');
+else console.error('Invalid stick version in config! Must be either 2 or 3.');
 
 let hr_sensor = new ant.HeartRateSensor(stick);
-let hr_pulses = 0;
-let hr_connected = null;
-let hr_timeout = null;
-let hr_reconnect_timeout = null;
 
-function hr_reconnect_cb() {
-    if (hr_connected !== true) {
-        console.log('Attempting to reconnect HR...');
-        try { hr_sensor.attach(0, 0); } catch (e) {  }
-        hr_reconnect_timeout = setTimeout(hr_reconnect_cb, RECONNECT_DELAY);
-    }
-}
-
-function hr_timeout_cb() {
-    if (hr_pulses == 0) {
-        if (hr_connected === true) {
-            console.log('HR disconnected!');
-            sendBPM(0);
-            hr_connected = false;
-            if (hr_reconnect_timeout != null)
-                clearTimeout(hr_reconnect_timeout);
-            hr_reconnect_timeout = setTimeout(hr_reconnect_cb, RECONNECT_DELAY);
-        }
-    }
-    else if (hr_connected === false) {
-        console.log('HR reconnected!')
-        hr_connected = true;
-        if (hr_reconnect_timeout != null)
-            clearTimeout(hr_reconnect_timeout);
-    }
-
-    hr_pulses = 0;
-    setTimeout(hr_timeout_cb, TIMEOUT);
+function push_hr_to_avg() {
+    if (last_bpm) avg_bpm.push(last_bpm);
 }
 
 hr_sensor.on('hbdata', (data) => {
-    if (hr_connected === null) {
-        hr_connected = true;
-        console.log('HR connected!');
+    if (connected === null)
+        console.log('Connected!');
+    else if (connected === false)
+        console.log('Reconnected!');
+
+    connected = true;
+
+    if (reconnect_timeout) {
+        clearTimeout(reconnect_timeout);
+        reconnect_timeout = null;
     }
+
+    // if (reconnect_failed_timeout) {
+    //     clearTimeout(reconnect_failed_timeout);
+    //     reconnect_failed_timeout = null;
+    // }
 
     sendBPM(data.ComputedHeartRate);
-    hr_pulses += 1;
-
-    if (TIMEOUT > 0) {
-        if (hr_timeout === null) {
-            hr_timeout = setTimeout(hr_timeout_cb, TIMEOUT);
-        }
-        else {
-            clearTimeout(hr_timeout);
-            hr_timeout = setTimeout(hr_timeout_cb, TIMEOUT);
-        }
-    }
 });
 
-stick.on('startup', () => {
-    console.info('ANT+ Stick started up!');
+// hr_sensor.on('attach', () => {
+//     console.log('attach');
+// });
+
+hr_sensor.on('eventData', (data) => {
+    console.log('eventData', data);
+});
+
+// hr_sensor.on('attached', () => {
+//     if (connected === null)
+//         console.log('Connected!');
+//     else if (connected === false)
+//         console.log('Reconnected!');
+//     connected = true;
+// });
+
+function reconnect_handler() {
+    console.log('Reconnecting...');
     hr_sensor.attach(0, 0);
+}
+
+hr_sensor.on('detached', () => {
+    connected = false;
+    console.log(`Lost connection!`);
+    reconnect_timeout = setTimeout(reconnect_handler, RECONNECT_DELAY * 1000);
+});
+
+// stick.on('shutdown', (data) => {
+//     console.log('shutting down', data);
+// });
+
+stick.on('startup', () => {
+    // console.info('ANT+ Stick started up!');
+    hr_sensor.attach(0, 0);
+    setInterval(push_hr_to_avg, 60 * 1000);
 });
 
 if (!stick.open()) {
     console.log('ANT+ Stick not found!');
-} else {
-    console.info('Connected to ANT+ stick!');
 }
+// else {
+//     console.info('Connected to ANT+ stick!');
+// }
+
+let saved_session_data = false;
+
+function on_exit() {
+    if (!saved_session_data) {
+        console.log('Saving session data...');
+        saved_session_data = true;
+        let session_end_time = new Date();
+        let average_bpm = 0;
+        for (let i = 0; i < avg_bpm.length; i++)
+            average_bpm += avg_bpm[i];
+        average_bpm /= avg_bpm.length;
+        if (!fs.existsSync(OUTPUT_FILE_PATH))
+            fs.appendFileSync(OUTPUT_FILE_PATH, 'START_TIME,START_DATE,END_TIME,END_DATE,AVG_BPM,MAX_BPM,MIN_BPM\n');
+        let text = `${session_start_time.toLocaleTimeString()},${session_start_time.toLocaleDateString()},${session_end_time.toLocaleTimeString()},${session_end_time.toLocaleDateString()},${average_bpm},${max_bpm},${min_bpm}\n`;
+        fs.appendFileSync(OUTPUT_FILE_PATH, text);
+        if (DEBUG) console.log(text);
+    }
+    process.exit(0);
+}
+
+process.on('exit', on_exit);
+process.on('SIGINT', on_exit);
+process.on('SIGTERM', on_exit);
